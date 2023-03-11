@@ -12,19 +12,10 @@ use paperclip::actix::{
 };
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
 
-fn option_to_response(entry: Option<Entry>) -> Result<Json<Entry>, Error> {
-    if let Some(entry) = entry {
-        Ok(Json(entry))
-    } else {
-        Err(actix_web::error::ErrorNotFound("Entry not found"))
-    }
-}
-
 #[api_v2_operation]
 #[get("/entries")]
 async fn list_entries(pool: web::Data<Pool<Sqlite>>) -> Result<Json<Vec<Entry>>, Error> {
-    let entries = entry::query::list(pool.get_ref())
-        .await?;
+    let entries = entry::query::list_all(pool.get_ref()).await?;
 
     Ok(Json(entries))
 }
@@ -35,10 +26,9 @@ async fn show_entry(
     slug: web::Path<String>,
     pool: web::Data<Pool<Sqlite>>,
 ) -> Result<Json<Entry>, Error> {
-    let entry = entry::query::get_optional_by_slug(pool.get_ref(), &slug.into_inner())
-        .await?;
+    let entry = entry::query::get_one_by_slug(pool.get_ref(), &slug.into_inner()).await?;
 
-    option_to_response(entry)
+    Ok(Json(entry))
 }
 
 #[api_v2_operation]
@@ -47,8 +37,7 @@ async fn create_entry(
     body: Json<CreateEntry>,
     pool: web::Data<Pool<Sqlite>>,
 ) -> Result<Json<Entry>, Error> {
-    let entry = entry::query::create(pool.get_ref(), &body)
-        .await?;
+    let entry = entry::query::create_one(pool.get_ref(), &body).await?;
 
     Ok(Json(entry))
 }
@@ -60,10 +49,9 @@ async fn update_entry(
     body: Json<UpdateEntry>,
     pool: web::Data<Pool<Sqlite>>,
 ) -> Result<Json<Entry>, Error> {
-    let entry = entry::query::update_optional(pool.get_ref(), &slug.into_inner(), &body)
-        .await?;
+    let entry = entry::query::update_one(pool.get_ref(), &slug.into_inner(), &body).await?;
 
-    option_to_response(entry)
+    Ok(Json(entry))
 }
 
 #[api_v2_operation]
@@ -72,11 +60,9 @@ async fn delete_entry(
     slug: web::Path<String>,
     pool: web::Data<Pool<Sqlite>>,
 ) -> Result<Json<Entry>, Error> {
-    let slug = slug.to_string();
-    let entry = entry::query::delete_optional(pool.get_ref(), &slug)
-        .await?;
+    let entry = entry::query::delete_one(pool.get_ref(), &slug.into_inner()).await?;
 
-    option_to_response(entry)
+    Ok(Json(entry))
 }
 
 #[actix_web::main]
