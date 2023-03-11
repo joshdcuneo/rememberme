@@ -1366,10 +1366,12 @@ name = "rememberme"
 version = "0.1.0"
 dependencies = [
  "actix-web",
+ "anyhow",
  "env_logger",
  "paperclip",
  "serde",
  "sqlx",
+ "thiserror",
  "tokio",
 ]
 

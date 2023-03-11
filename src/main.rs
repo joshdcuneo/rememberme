@@ -1,31 +1,30 @@
-use actix_web::{error, App, Error, HttpServer};
+mod entry;
+mod error;
+
+use actix_web::middleware::Logger;
+use actix_web::{App, Error, HttpServer};
+use entry::{CreateEntry, Entry, UpdateEntry};
+use env_logger::Env;
 use paperclip::actix::{
     api_v2_operation, delete, get, post, put,
     web::{self, Json},
-    Apiv2Schema, OpenApiExt,
+    OpenApiExt,
 };
-use actix_web::middleware::Logger;
-use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
-use env_logger::Env;
 
-#[derive(Serialize, Deserialize, Apiv2Schema)]
-struct Entry {
-    name: String,
-    description: String,
-    slug: String,
+fn option_to_response(entry: Option<Entry>) -> Result<Json<Entry>, Error> {
+    if let Some(entry) = entry {
+        Ok(Json(entry))
+    } else {
+        Err(actix_web::error::ErrorNotFound("Entry not found"))
+    }
 }
 
 #[api_v2_operation]
 #[get("/entries")]
 async fn list_entries(pool: web::Data<Pool<Sqlite>>) -> Result<Json<Vec<Entry>>, Error> {
-    let entries = sqlx::query_as!(Entry, "SELECT name, description, slug FROM entries")
-        .fetch_all(pool.get_ref())
-        .await
-        .map_err(|e| {
-            eprintln!("Error: {}", e);
-            error::ErrorInternalServerError("Database error".to_string())
-        })?;
+    let entries = entry::query::list(pool.get_ref())
+        .await?;
 
     Ok(Json(entries))
 }
@@ -36,51 +35,20 @@ async fn show_entry(
     slug: web::Path<String>,
     pool: web::Data<Pool<Sqlite>>,
 ) -> Result<Json<Entry>, Error> {
-    let slug = slug.into_inner();
-    let entry = sqlx::query_as!(
-        Entry,
-        "SELECT name, description, slug FROM entries WHERE slug = ?",
-        slug
-    )
-    .fetch_one(pool.get_ref())
-    .await
-    .map_err(|e| {
-        eprintln!("Error: {}", e);
-        error::ErrorInternalServerError("Database error".to_string())
-    })?;
+    let entry = entry::query::get_optional_by_slug(pool.get_ref(), &slug.into_inner())
+        .await?;
 
-    Ok(Json(entry))
+    option_to_response(entry)
 }
 
 #[api_v2_operation]
 #[post("/entries")]
 async fn create_entry(
-    body: Json<Entry>,
+    body: Json<CreateEntry>,
     pool: web::Data<Pool<Sqlite>>,
 ) -> Result<Json<Entry>, Error> {
-    sqlx::query!(
-        "INSERT INTO entries (name, description, slug) VALUES (?, ?, ?)",
-        body.name,
-        body.description,
-        body.slug
-    )
-    .execute(pool.get_ref())
-    .await
-    .map_err(|e| {
-        eprintln!("Error: {}", e);
-        error::ErrorInternalServerError("Database error".to_string())
-    })?;
-    let entry = sqlx::query_as!(
-        Entry,
-        "SELECT name, description, slug FROM entries WHERE slug = ?",
-        body.slug
-    )
-    .fetch_one(pool.get_ref())
-    .await
-    .map_err(|e| {
-        eprintln!("Error: {}", e);
-        error::ErrorInternalServerError("Database error".to_string())
-    })?;
+    let entry = entry::query::create(pool.get_ref(), &body)
+        .await?;
 
     Ok(Json(entry))
 }
@@ -89,35 +57,13 @@ async fn create_entry(
 #[put("/entries/{slug}")]
 async fn update_entry(
     slug: web::Path<String>,
-    body: Json<Entry>,
+    body: Json<UpdateEntry>,
     pool: web::Data<Pool<Sqlite>>,
 ) -> Result<Json<Entry>, Error> {
-    let slug = slug.to_string();
-    sqlx::query!(
-        "UPDATE entries SET name = ?, description = ? WHERE slug = ?",
-        body.name,
-        body.description,
-        slug
-    )
-    .execute(pool.get_ref())
-    .await
-    .map_err(|e| {
-        eprintln!("Error: {}", e);
-        error::ErrorInternalServerError("Database error".to_string())
-    })?;
-    let entry = sqlx::query_as!(
-        Entry,
-        "SELECT name, description, slug FROM entries WHERE slug = ?",
-        body.slug
-    )
-    .fetch_one(pool.get_ref())
-    .await
-    .map_err(|e| {
-        eprintln!("Error: {}", e);
-        error::ErrorInternalServerError("Database error".to_string())
-    })?;
+    let entry = entry::query::update_optional(pool.get_ref(), &slug.into_inner(), &body)
+        .await?;
 
-    Ok(Json(entry))
+    option_to_response(entry)
 }
 
 #[api_v2_operation]
@@ -127,26 +73,10 @@ async fn delete_entry(
     pool: web::Data<Pool<Sqlite>>,
 ) -> Result<Json<Entry>, Error> {
     let slug = slug.to_string();
-    let entry = sqlx::query_as!(
-        Entry,
-        "SELECT name, description, slug FROM entries WHERE slug = ?",
-        slug
-    )
-    .fetch_one(pool.get_ref())
-    .await
-    .map_err(|e| {
-        eprintln!("Error: {}", e);
-        error::ErrorInternalServerError("Database error".to_string())
-    })?;
-    sqlx::query!("DELETE FROM entries WHERE slug = ?", slug)
-        .execute(pool.get_ref())
-        .await
-        .map_err(|e| {
-            eprintln!("Error: {}", e);
-            error::ErrorInternalServerError("Database error".to_string())
-        })?;
+    let entry = entry::query::delete_optional(pool.get_ref(), &slug)
+        .await?;
 
-    Ok(Json(entry))
+    option_to_response(entry)
 }
 
 #[actix_web::main]
