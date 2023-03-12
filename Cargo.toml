@@ -14,3 +14,4 @@ tokio = { version = "1", features = ["full"] }
 env_logger = "0.10.0"
 anyhow = "1.0.69"
 thiserror = "1.0.39"
+dotenvy = "0.15.6"
